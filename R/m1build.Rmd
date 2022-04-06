@@ -9,9 +9,11 @@ source('functions/ffbsJoint.R')
 ```
 
 
-## Verifying posterior for single gsk fixing the alphas as the true values
+
+## N = 1, all positions of G
 
 ```{r}
+
 TT <- 50
 N <- 1
 Q <- 2
@@ -28,7 +30,8 @@ G <- c(
 
 
 ITSKEEPER <- matrix(nrow = 500, ncol = 500)
-for(j in 1:500){
+
+# for(j in 1:500){
   
   
   
@@ -52,47 +55,78 @@ for(j in 1:500){
   G.track <- array(dim = c(dim(G), its))
   
   k <- 1
-  q <- 1
+  q <- 2
   qtil <- which((1:Q) != q)
   
-  yk <- y[k,]
+  
   alphasN <-  t(alphas[,,1])
   
   
   for(i in 1:its){
+    for(k in 1:K){
+      yk <- y[k,]
+      Galpha <- G.star[k,] * t(alphas[, ,1])
+      
+      YGA <- yk - t(Galpha)
+      for(q in 1:q){
+        
+        
+        
+        
+        
+        
+        qtil <- which((1:Q) != q)
+        
+        aq <- alphas[,q,1]
+        
+        # sum(aq * YGA[,qtil])
+        
+        
+        gskMean <- (sigeps2 * mu_qs + var_qs  * sum(aq * YGA[,qtil])) / (sigeps2 + var_qs * sum(alphas[,q,1]^2))
+        
+        gskVar <- sigeps2 * var_qs / (sigeps2 + var_qs * sum(alphas[,q,1]^2))
+        
+        
+        G.star[k, q] <- rnorm(1, gskMean, sqrt(gskVar))
+      }
+    }
     
-    Galpha <- G.star[k,] * t(alphas[, ,1])
-    
-    YGA <- yk - t(Galpha)
-    
-    
-    aq <- alphas[,q,1]
-    
-    sum(aq * YGA[,qtil])
-    
-    
-    gskMean <- (sigeps2 * mu_qs + var_qs  * sum(aq * YGA[,qtil])) / (sigeps2 + var_qs * sum(alphas[,q,1]^2))
-    
-    gskVar <- sigeps2 * var_qs / (sigeps2 + var_qs * sum(alphas[,q,1]^2))
-    
-    
-    G.track[,,i] <- G.star[k, q] <- rnorm(1, gskMean, sqrt(gskVar))
+    G.track[,,i] <- G.star
   }
-  ITSKEEPER[,j] <- G.track[1,1,]
+  
+#   ITSKEEPER[,j] <- G.track[1,1,]
+# 
+# }
+kp <- 1
+qp <- 2
 
+
+for(kp in 1:K){
+  for(qp in 1:Q){
+    plot(
+      G.track[kp,qp,], 
+      main = paste(
+        "(", 
+        paste(round(quantile(G.track[kp,qp,], c(0.025, 0.975)), 3), collapse = ", "),
+        ")", 
+        sep = ""
+      )
+    )
+    abline(h = G[kp,qp])
+  }
 }
 
 
-plot(G.track[1,1,], main = paste("(", paste(round(quantile(G.track[1,1,], c(0.025, 0.975)), 3), collapse = ", "), ")", sep = ""))
-abline(h = G[1,1])
 
 
-colMeans(ITSKEEPER) %>%
-  hist()
+# colMeans(ITSKEEPER) %>%
+#   hist()
+# 
+# apply(ITSKEEPER, 2, quantile, c(.025, 0.975)) %>%
+#   apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
+#   mean()
 
-apply(ITSKEEPER, 2, quantile, c(.025, 0.975)) %>%
-  apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
-  mean()
+
+
 
 ```
-
