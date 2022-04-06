@@ -8,57 +8,83 @@ library(tidyverse)
 source('functions/ffbsJoint.R')
 ```
 
+## Alpha and G matrix
 
-
-# N = 1 all G matrix
 
 ```{r}
-
-TT <- 50
-N <- 1
+its <- 10000
+N <- 20
+TT <-10
 Q <- 3
 K <- 6
-mu_qs <- 0
-var_qs <- 10
+
 sigeps2 <- 1
 gvec <- seq(0, 1, length.out = K)
 
+V <- diag(1, K, K)
+W <- diag(1, Q, Q)
+
 G <- c(
-  rev(gvec), (gvec), runif(K, 0, 1)
+  runif(K*Q, -20, 20)
 ) %>%
   matrix(K, Q)
 
-G.track <- array(dim = c(dim(G), its))
 
-G.star <- G.prior <- G
-
-etas <- rnorm(TT*1*Q) %>%
-  matrix(TT, Q)
-
-epsilon <- rnorm(TT*1*K, sd = sqrt(sigeps2)) %>%
-   matrix(K, TT)
-
-alphas <- apply(etas, 2, cumsum) %>% t()
-
-y <- G %*% alphas + epsilon
+mu_qs <- matrix(K, Q)
+var_qs <- 10
 
 
+ITSKEEPER <- matrix(nrow = 500, ncol = 500)
 
-alpha.star <- alphas
-i <- 1
-k <- 1
-q <- 1
+# for(j in 1:500){
+  
+  
+  
+  etas <- rnorm(TT*N*Q) %>%
+    array(dim = c(TT,Q,N))
+  
+  epsilon <- rnorm(TT*N*K, sd = sqrt(sigeps2)) %>%
+    array(dim = c(K,TT,N))
+  
+  alphas <- apply(etas, c(2,3), cumsum)
+  alphas <- lapply(1:N, function(i)alphas[,,i])
+  
+  
+  y <- lapply(1:N, function(i){
+    tcrossprod(G, alphas[[i]]) + epsilon[,,i]
+  })
+  
 
+  
+  
+  G.star <- G
+  # G.star[1,1] <- 0
 
-alpha.track <- array(dim = c(Q, TT, its))
-ata <-  solve(tcrossprod(alphas) + diag(var_qs, Q, Q))
-mu.g <- (G.prior + tcrossprod(y, alphas)) %*% ata  
+  G.track <- array(dim = c(dim(G), its))
+  
+  k <- 1
+  q <- 2
+  qtil <- which((1:Q) != q)
+  
+  
 
-alphas %*% y[6,]  
+  i <- 1
+  
+  ybig <- do.call("cbind", y)
+  
   for(i in 1:its){
     
+    ### G transofrmed Alphas
+    alpha.star <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = diag(1, K, K), W = diag(1, Q, Q), m0 = 0, C0 = diag(10, Q, Q))$x)
     
     
+    ### Posterior of G
+    abig <- do.call("cbind", alpha.star)
+    aybig <- tcrossprod(ybig, abig)
+
+    ata <-  solve(tcrossprod(abig) + diag(var_qs, Q, Q))
+    mu.g <- (G.prior + aybig) %*% ata  
+
     G.track[,,i] <- G.star <- lapply(1:K, function(k){
       mvtnorm::rmvnorm(1, mean = mu.g[k,], sigma = ata)
     }) %>%
@@ -76,10 +102,12 @@ qp <- 2
 for(kp in 1:K){
   for(qp in 1:Q){
     plot(
-      G.track[kp,qp,], 
+      G.track[kp,qp,],
       main = paste(
-        "(", 
-        paste(round(quantile(G.track[kp,qp,], c(0.025, 0.975)), 3), collapse = ", "),
+        kp, ", ", qp, "    ",
+        G[kp,qp],
+        ": (", 
+        paste( round(quantile(G.track[kp,qp,], c(0.025, 0.975)), 3), collapse = ", "),
         ")", 
         sep = ""
       )
@@ -94,10 +122,18 @@ for(kp in 1:K){
 # colMeans(ITSKEEPER) %>%
 #   hist()
 # 
-# apply(ITSKEEPER, 2, quantile, c(.025, 0.975)) %>%
+# apply(ITSKEEPER, 2, function(x)quantile(x, probs = c(.025, 0.975), na.rm = T)) %>%
 #   apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
-#   mean()
+#   mean(na.rm = T)
 
-G.star
 
 ```
+
+
+```{r}
+(G.track[,,5000:10000] %>%
+  apply(1:2, mean)) * 3
+
+G 
+```
+
