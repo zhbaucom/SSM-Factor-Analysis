@@ -10,23 +10,31 @@ source('functions/ffbsJoint.R')
 
 
 
-## N > 1 all positions of G
+## N > 1 all positions of G AND alpha
+
+
 
 ```{r}
-N <- 5
+its <- 500
+N <- 20
 TT <-10
-Q <- 2
-K <- 3
-mu_qs <- 0
-var_qs <- 10
+Q <- 3
+K <- 6
+
 sigeps2 <- 1
 gvec <- seq(0, 1, length.out = K)
+
+V <- diag(1, K, K)
+W <- diag(1, Q, Q)
 
 G <- c(
   rev(gvec), (gvec)
 ) %>%
   matrix(K, Q)
 
+
+mu_qs <- G
+var_qs <- .1
 
 
 ITSKEEPER <- matrix(nrow = 500, ncol = 500)
@@ -53,9 +61,8 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
   
   
   G.star <- G
-  G.star[1,1] <- 0
-  
-  its <- 500
+  # G.star[1,1] <- 0
+
   G.track <- array(dim = c(dim(G), its))
   
   k <- 1
@@ -64,21 +71,20 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
   
   
 
-  # G <- G.star
-  # y <- y[[1]]
-  # W <- diag(1, 2, 2)
-  # V <- diag(1, 3, 3)
-  # m0 <- 0
-  # C0 <- diag(10, 2, 2)
-  
+  i <- 1
   
   for(i in 1:its){
+    
+    
+    alpha.star <- lapply(y, function(yout)ffbs.joint(y = yout, G = G, V = diag(1, K, K), W = diag(1, Q, Q), m0 = 0, C0 = diag(10, Q, Q))$x)
+    
 
     for(k in 1:K){
       yk <- lapply(y, function(x)x[k,])
-      Galpha <- lapply(1:N, function(ind) G.star[k,] * t(alphas[[ind]]))
+      Galpha <- lapply(1:N, function(ind) G.star[k,] * alpha.star[[ind]])
       
       YGA <- lapply(1:N, function(ind) yk[[ind]] - t(Galpha[[ind]]))
+      
       for(q in 1:Q){
         
         
@@ -88,13 +94,13 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
         
         qtil <- which((1:Q) != q)
         
-        aq <- lapply(1:N, function(ind)alphas[[ind]][,q])
+        aq <- lapply(1:N, function(ind)alpha.star[[ind]][q,])
         
         numer <- lapply(1:N, function(ind)sum(aq[[ind]] * YGA[[ind]][,qtil])) %>%
           unlist() %>%
           sum
         
-        denom <- lapply(1:N, function(ind)alphas[[ind]][,q]^2) %>%
+        denom <- lapply(1:N, function(ind)alpha.star[[ind]][q,]^2) %>%
           unlist() %>%
           sum
         
@@ -102,7 +108,7 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
         # sum(aq * YGA[,qtil])
         
         
-        gskMean <- (sigeps2 * mu_qs + var_qs  * numer) / (sigeps2 + var_qs * denom)
+        gskMean <- (sigeps2 * mu_qs[k,q] + var_qs  * numer) / (sigeps2 + var_qs * denom)
         
         gskVar <- sigeps2 * var_qs / (sigeps2 + var_qs * denom)
         
@@ -124,10 +130,12 @@ qp <- 2
 for(kp in 1:K){
   for(qp in 1:Q){
     plot(
-      G.track[kp,qp,], 
+      G.track[kp,qp,],
       main = paste(
-        "(", 
-        paste(round(quantile(G.track[kp,qp,], c(0.025, 0.975)), 3), collapse = ", "),
+        kp, ", ", qp, "    ",
+        G[kp,qp],
+        ": (", 
+        paste( round(quantile(G.track[kp,qp,], c(0.025, 0.975)), 3), collapse = ", "),
         ")", 
         sep = ""
       )
@@ -142,10 +150,9 @@ for(kp in 1:K){
 # colMeans(ITSKEEPER) %>%
 #   hist()
 # 
-# apply(ITSKEEPER, 2, quantile, c(.025, 0.975)) %>%
+# apply(ITSKEEPER, 2, function(x)quantile(x, probs = c(.025, 0.975), na.rm = T)) %>%
 #   apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
-#   mean()
-
+#   mean(na.rm = T)
 
 
 ```
