@@ -10,12 +10,11 @@ source('functions/ffbsJoint.R')
 
 
 
-## N = 1, all positions of G
+## N > 1 all positions of G
 
 ```{r}
-
-TT <- 50
-N <- 1
+N <- 5
+TT <-10
 Q <- 2
 K <- 3
 mu_qs <- 0
@@ -27,6 +26,7 @@ G <- c(
   rev(gvec), (gvec)
 ) %>%
   matrix(K, Q)
+
 
 
 ITSKEEPER <- matrix(nrow = 500, ncol = 500)
@@ -42,10 +42,14 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
     array(dim = c(K,TT,N))
   
   alphas <- apply(etas, c(2,3), cumsum)
+  alphas <- lapply(1:N, function(i)alphas[,,i])
   
-  G_alpha <- tcrossprod(G, alphas[,,1])
   
-  y <- G_alpha + epsilon[,,1]
+  y <- lapply(1:N, function(i){
+    tcrossprod(G, alphas[[i]]) + epsilon[,,i]
+  })
+  
+
   
   
   G.star <- G
@@ -59,16 +63,23 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
   qtil <- which((1:Q) != q)
   
   
-  alphasN <-  t(alphas[,,1])
+
+  # G <- G.star
+  # y <- y[[1]]
+  # W <- diag(1, 2, 2)
+  # V <- diag(1, 3, 3)
+  # m0 <- 0
+  # C0 <- diag(10, 2, 2)
   
   
   for(i in 1:its){
+
     for(k in 1:K){
-      yk <- y[k,]
-      Galpha <- G.star[k,] * t(alphas[, ,1])
+      yk <- lapply(y, function(x)x[k,])
+      Galpha <- lapply(1:N, function(ind) G.star[k,] * t(alphas[[ind]]))
       
-      YGA <- yk - t(Galpha)
-      for(q in 1:q){
+      YGA <- lapply(1:N, function(ind) yk[[ind]] - t(Galpha[[ind]]))
+      for(q in 1:Q){
         
         
         
@@ -77,14 +88,23 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
         
         qtil <- which((1:Q) != q)
         
-        aq <- alphas[,q,1]
+        aq <- lapply(1:N, function(ind)alphas[[ind]][,q])
+        
+        numer <- lapply(1:N, function(ind)sum(aq[[ind]] * YGA[[ind]][,qtil])) %>%
+          unlist() %>%
+          sum
+        
+        denom <- lapply(1:N, function(ind)alphas[[ind]][,q]^2) %>%
+          unlist() %>%
+          sum
+        
         
         # sum(aq * YGA[,qtil])
         
         
-        gskMean <- (sigeps2 * mu_qs + var_qs  * sum(aq * YGA[,qtil])) / (sigeps2 + var_qs * sum(alphas[,q,1]^2))
+        gskMean <- (sigeps2 * mu_qs + var_qs  * numer) / (sigeps2 + var_qs * denom)
         
-        gskVar <- sigeps2 * var_qs / (sigeps2 + var_qs * sum(alphas[,q,1]^2))
+        gskVar <- sigeps2 * var_qs / (sigeps2 + var_qs * denom)
         
         
         G.star[k, q] <- rnorm(1, gskMean, sqrt(gskVar))
@@ -125,7 +145,6 @@ for(kp in 1:K){
 # apply(ITSKEEPER, 2, quantile, c(.025, 0.975)) %>%
 #   apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
 #   mean()
-
 
 
 
