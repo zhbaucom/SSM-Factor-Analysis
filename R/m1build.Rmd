@@ -5,18 +5,25 @@ output: html_document
 
 ```{r}
 library(tidyverse)
-source('functions/ffbsJoint.R')
+source('functions/ffbsFactor.R')
+seed <- 123
+replaceMessage <- function(x, width = 80)
+{
+    message("\r", rep(" ", times = width - length(x)), "\r", appendLF = F)
+    message(x, appendLF = F)
+}
 ```
 
 ## Alpha and G matrix
 
 
 ```{r}
-its <- 10000
-N <- 20
+# set.seed(seed)
+its <- 100000
+N <- 10
 TT <-10
-Q <- 3
-K <- 6
+Q <- 5
+K <- 10
 
 sigeps2 <- 1
 gvec <- seq(0, 1, length.out = K)
@@ -25,19 +32,20 @@ V <- diag(1, K, K)
 W <- diag(1, Q, Q)
 
 G <- c(
-  runif(K*Q, -20, 20)
+  runif(K*Q, 0, 20)
 ) %>%
   matrix(K, Q)
 
 
-mu_qs <- matrix(K, Q)
+mu_qs <- matrix(0, K, Q)
+# mu_qs <- G
 var_qs <- 10
 
 
 ITSKEEPER <- matrix(nrow = 500, ncol = 500)
 
 # for(j in 1:500){
-  
+i <- 1  
   
   
   etas <- rnorm(TT*N*Q) %>%
@@ -54,7 +62,7 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
     tcrossprod(G, alphas[[i]]) + epsilon[,,i]
   })
   
-
+  alpha.star <- lapply(alphas, t)
   
   
   G.star <- G
@@ -71,69 +79,111 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
   i <- 1
   
   ybig <- do.call("cbind", y)
+  alpha.track <- list()
   
   for(i in 1:its){
     
     ### G transofrmed Alphas
-    alpha.star <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = diag(1, K, K), W = diag(1, Q, Q), m0 = 0, C0 = diag(10, Q, Q))$x)
+    alpha.star <- alpha.track[[i]] <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = diag(1, K, K), W = diag(1, Q, Q), m0 = 0, C0 = diag(10, Q, Q))$x)
     
     
     ### Posterior of G
     abig <- do.call("cbind", alpha.star)
+
+    
     aybig <- tcrossprod(ybig, abig)
 
-    ata <-  solve(tcrossprod(abig) + diag(var_qs, Q, Q))
-    mu.g <- (G.prior + aybig) %*% ata  
+    ata.inv <-  solve(tcrossprod(abig)+ diag(1/var_qs, Q, Q))
+    mu.g <- (mu_qs/var_qs + aybig) %*% ata.inv  
+    
 
     G.track[,,i] <- G.star <- lapply(1:K, function(k){
-      mvtnorm::rmvnorm(1, mean = mu.g[k,], sigma = ata)
+      mvtnorm::rmvnorm(1, mean = mu.g[k,], sigma = ata.inv)
     }) %>%
       do.call("rbind", .)
+    
+    if((i %% 10) == 0)replaceMessage(i)
     
   }
   
 #   ITSKEEPER[,j] <- G.track[1,1,]
 # 
 # }
-kp <- 1
-qp <- 2
-
-
-for(kp in 1:K){
-  for(qp in 1:Q){
-    plot(
-      G.track[kp,qp,],
-      main = paste(
-        kp, ", ", qp, "    ",
-        G[kp,qp],
-        ": (", 
-        paste( round(quantile(G.track[kp,qp,], c(0.025, 0.975)), 3), collapse = ", "),
-        ")", 
-        sep = ""
-      )
-    )
-    abline(h = G[kp,qp])
-  }
-}
 
 
 
 
 # colMeans(ITSKEEPER) %>%
 #   hist()
-# 
+#
 # apply(ITSKEEPER, 2, function(x)quantile(x, probs = c(.025, 0.975), na.rm = T)) %>%
 #   apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
 #   mean(na.rm = T)
 
 
+covered <- matrix(0, K, Q)
+for(kp in 1:K){
+  for(qp in 1:Q){
+    ci <- quantile(G.track[kp,qp,], c(0.025, 0.975), na.rm = T)
+    covered[kp, qp] <- ci[1] < G[kp,qp] & ci[2] > G[kp,qp]
+    plot(
+      G.track[kp,qp,],
+      main = paste(
+        kp, ", ", qp, "    ",
+        G[kp,qp],
+        ": (",
+        paste( round(ci, 3), collapse = ", "),
+        ")",
+        sep = ""
+      )
+    )
+    abline(h = G[kp,qp], col = 'red')
+  }
+}
+
+
+hist(apply(G.track, 1:2, mean) - G)
+
+```
+
+```{r}
+covered
+```
+
+```{r}
+covered1
 ```
 
 
 ```{r}
-(G.track[,,5000:10000] %>%
-  apply(1:2, mean)) * 3
+covered1 <- covered
+```
 
+
+
+```{r}
+ghat <- (G.track[,,5000:10000] %>%
+  apply(1:2, mean))
+
+ghat
 G 
 ```
+
+```{r}
+lcl <- apply(G.track[,,5000:10000], 1:2, quantile, .025)
+ucl <- apply(G.track[,,5000:10000], 1:2, quantile, .975)
+lcl[lcl < 0] <- 0
+ucl[ucl < 0] <- 0
+
+lcl/rowSums(abs(lcl)) < abs(G)/rowSums(abs(G)) & abs(G)/rowSums(abs(G)) < ucl/rowSums(abs(ucl)) 
+
+abs(G)/rowSums(abs(G))
+```
+
+```{r}
+do.call("cbind", y) %>%
+  t() %>%
+  svd()
+```
+
 
