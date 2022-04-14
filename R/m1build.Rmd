@@ -18,23 +18,28 @@ replaceMessage <- function(x, width = 80)
 
 
 ```{r}
-# set.seed(seed)
-its <- 100000
+set.seed(seed)
+its <- 10000
 N <- 10
 TT <-10
-Q <- 5
-K <- 10
+Q <- 4
+K <- 8
 
-sigeps2 <- 1
+sigeps2 <- 3
+sigeta2 <- 1
 gvec <- seq(0, 1, length.out = K)
 
-V <- diag(1, K, K)
-W <- diag(1, Q, Q)
+V <- diag(sigeps2, K, K)
+W <- diag(sigeta2, Q, Q)
+
+
+GLoadings <- map(1:8, ~sample(c(sample(c(0, 0, 0, 1), 3), 1))) %>%
+                   do.call('rbind', .)
 
 G <- c(
   runif(K*Q, 0, 20)
 ) %>%
-  matrix(K, Q)
+  matrix(K, Q) * GLoadings
 
 
 mu_qs <- matrix(0, K, Q)
@@ -48,7 +53,7 @@ ITSKEEPER <- matrix(nrow = 500, ncol = 500)
 i <- 1  
   
   
-  etas <- rnorm(TT*N*Q) %>%
+  etas <- rnorm(TT*N*Q, sd = sqrt(sigeta2)) %>%
     array(dim = c(TT,Q,N))
   
   epsilon <- rnorm(TT*N*K, sd = sqrt(sigeps2)) %>%
@@ -65,7 +70,7 @@ i <- 1
   alpha.star <- lapply(alphas, t)
   
   
-  G.star <- G
+  G.star <- mu_qs
   # G.star[1,1] <- 0
 
   G.track <- array(dim = c(dim(G), its))
@@ -84,8 +89,8 @@ i <- 1
   for(i in 1:its){
     
     ### G transofrmed Alphas
-    alpha.star <- alpha.track[[i]] <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = diag(1, K, K), W = diag(1, Q, Q), m0 = 0, C0 = diag(10, Q, Q))$x)
-    
+    alpha.star <- alpha.track[[i]] <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = V, W = W, m0 = 0, C0 = diag(10, Q, Q))$x)
+
     
     ### Posterior of G
     abig <- do.call("cbind", alpha.star)
@@ -93,14 +98,14 @@ i <- 1
     
     aybig <- tcrossprod(ybig, abig)
 
-    ata.inv <-  solve(tcrossprod(abig)+ diag(1/var_qs, Q, Q))
-    mu.g <- (mu_qs/var_qs + aybig) %*% ata.inv  
+    ata.inv <-  solve(tcrossprod(abig)/sigeps2 + diag(1/var_qs, Q, Q))
+    mu.g <- (mu_qs/var_qs + aybig/sigeps2) %*% ata.inv  
     
 
-    G.track[,,i] <- G.star <- lapply(1:K, function(k){
+    G.track[,,i] <- G.star <- abs((lapply(1:K, function(k){
       mvtnorm::rmvnorm(1, mean = mu.g[k,], sigma = ata.inv)
     }) %>%
-      do.call("rbind", .)
+      do.call("rbind", .)) * GLoadings)
     
     if((i %% 10) == 0)replaceMessage(i)
     
@@ -120,7 +125,13 @@ i <- 1
 #   apply(2, function(x) x[1] < 1 & x[2] > 1) %>%
 #   mean(na.rm = T)
 
+```
 
+
+
+
+
+```{r}
 covered <- matrix(0, K, Q)
 for(kp in 1:K){
   for(qp in 1:Q){
@@ -130,7 +141,7 @@ for(kp in 1:K){
       G.track[kp,qp,],
       main = paste(
         kp, ", ", qp, "    ",
-        G[kp,qp],
+        round(G[kp,qp], 3),
         ": (",
         paste( round(ci, 3), collapse = ", "),
         ")",
@@ -146,18 +157,21 @@ hist(apply(G.track, 1:2, mean) - G)
 
 ```
 
-```{r}
-covered
-```
-
-```{r}
-covered1
-```
 
 
 ```{r}
-covered1 <- covered
+subject <- sample(1:N, 1)
+i <- sample(1:TT, 1)
+j <- sample(1:K, 1)
+lapply(alpha.track, function(x)x[[subject]][1,1]) %>%
+  unlist() %>%
+  plot(main = paste("Subject: ", subject, ", Time: ", j, ", Test: ", i, sep = ""))
+abline(h = alphas[[subject]][1,1], col = 'red')
 ```
+
+
+
+
 
 
 
@@ -179,11 +193,4 @@ lcl/rowSums(abs(lcl)) < abs(G)/rowSums(abs(G)) & abs(G)/rowSums(abs(G)) < ucl/ro
 
 abs(G)/rowSums(abs(G))
 ```
-
-```{r}
-do.call("cbind", y) %>%
-  t() %>%
-  svd()
-```
-
 
