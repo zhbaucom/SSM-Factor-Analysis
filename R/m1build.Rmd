@@ -5,7 +5,9 @@ output: html_document
 
 ```{r}
 library(tidyverse)
+library(randcorr)
 source('functions/ffbsFactor.R')
+source("function/SSM_fac.R")
 seed <- 123
 replaceMessage <- function(x, width = 80)
 {
@@ -14,202 +16,180 @@ replaceMessage <- function(x, width = 80)
 }
 ```
 
-## Alpha and G matrix
+## SSM_fac functions
 
+### Data creation
 
 ```{r}
-set.seed(seed)
 its <- 10000
+burn <- floor(its/2)
+wait <- floor(its/4)
 N <- 10
 TT <-10
 Q <- 4
-K <- 8
+K <- 10
 
-sigeps2 <- 1
-sigeta2 <- 1
-gvec <- seq(0, 1, length.out = K)
-
-V <- diag(sigeps2, K, K)
-W <- diag(sigeta2, Q, Q)
-
-
-GLoadings <- map(1:8, ~sample(c(sample(c(0, 0, 0, 1), 3), 1))) %>%
-  do.call('rbind', .)
+GLoadings <- matrix(c(
+  0, 1, 0, 0,
+  0, 1, 1, 0,
+  0, 1, 0, 0,
+  1, 0, 0, 1,
+  0, 1, 1, 1,
+  1, 0, 0, 0,
+  1, 0, 1, 0,
+  0, 0, 1, 1,
+  1, 0, 0, 0,
+  1, 0, 1, 1
+), ncol = 4, byrow = T)
 
 G <- c(
   runif(K*Q, 0, 20)
 ) %>%
   matrix(K, Q) * GLoadings
 
+sigeps2 <- 1
+sigeta2 <- (randcorr(Q)/2) %>%
+  abs()
+diag(sigeta2) <- 1
+gvec <- seq(0, 1, length.out = K)
 
-mu_qs <- matrix(0, K, Q)
-# mu_qs <- G
-var_qs <- 10
+etas <- mvtnorm::rmvnorm(TT*N, sigma = sigeta2)
+colnames(etas) <- paste("eta_", 1:ncol(etas), sep = '')
+epss <- rnorm(TT*N*K, sd = sqrt(sigeps2)) %>%
+  matrix(TT*N, K)
+colnames(epss) <- paste("eps_", 1:ncol(epss), sep = '')
+ID <- sort(rep(1:N, TT))
+TIME <- rep(1:TT, N)
+
+FULL <- cbind(
+  ID = ID, TIME = TIME, etas, epss
+) %>%
+  data.frame() %>%
+  group_by(ID) %>%
+  mutate(across(starts_with("eta"), .fns = list(alpha = ~cumsum(.x)), .names = "{fn}_{col}")) %>% ungroup()
+
+y <- tcrossprod(as.matrix(select(FULL, contains("alpha"))), G) + as.matrix(select(FULL, contains("eps")))
+
+colnames(y) <- paste("y_", 1:ncol(y), sep = "")
+
+FULL <- cbind(y, FULL)
+```
+
+### Run model
+
+```{r}
+
+outcome_vars = paste("y_", 1:10, sep = "")
+id_var = "ID"
+time_var = "TIME"
+data = FULL
+
+facout <- SSM_fac(
+  data = FULL, outcome_vars = paste("y_", 1:10, sep = ""), id_var = "ID", time_var = "TIME", G_form = GLoadings,
+  its = 10000
+)
 
 
-ITSKEEPER <- matrix(nrow = 500, ncol = 500)
-
-i <- 1  
-
-
-vcovWish <- array(NA, dim = c(K, K, its))
-  
-wcovWish <- array(NA, dim = c(Q, Q, its))
-
-###Need another way to set "TT", not ncol (y)
-prior.nu.eta <- K - 1 + 0.01
-## prior.nu.eta <- cs + 1
-prior.Gamma.eta <- diag(0.01, K)
-## prior.Gamma.eta <- diag(1, cs)
-
-a0 <- 0.01
-b0 <- 0.01
-c0 <- 0.01
-d0 <- 0.01
-
-Neta <- N * TT - N
+```
 
 
 
 
-etas <- rnorm(TT*N*Q, sd = sqrt(sigeta2)) %>%
-  array(dim = c(TT,Q,N))
-
-epsilon <- rnorm(TT*N*K, sd = sqrt(sigeps2)) %>%
-  array(dim = c(K,TT,N))
-
-alphas <- apply(etas, c(2,3), cumsum)
-alphas <- lapply(1:N, function(i)alphas[,,i])
+```{r}
+W.hat <- apply(facout$Eta[,,burn:its], 1:2,mean, na.rm = TRUE)
+V.hat <- apply(facout$Eps[burn:its,], 2,mean, na.rm = TRUE)
+```
 
 
-y <- lapply(1:N, function(i){
-  tcrossprod(G, alphas[[i]]) + epsilon[,,i]
+```{r}
+W.hat
+sigeta2
+```
+
+
+```{r}
+V.hat
+sigeps2
+```
+
+
+
+
+```{r}
+G.track <- facout$G
+
+G.hat <- apply(G.track[,,burn:its], 1:2, mean, na.rm = TRUE)
+G.hat
+G
+
+(G.hat - G)/G
+```
+
+```{r}
+alpha.hat <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.hat, V = V.hat, W = W.hat, m0 = 0, C0 = diag(10, Q, Q))$x)
+alpha.dif <- lapply(1:length(alpha.hat), function(i){
+  alphas[[i]] - t(alpha.hat[[i]])
 })
 
-alpha.star <- lapply(alphas, t)
 
+alphanum <- alpha.dif %>%
+  map(~.x^2) %>%
+  unlist %>%
+  sum
 
-G.star <- mu_qs
-# G.star[1,1] <- 0
+alphabar <- alphas %>%
+  unlist() %>%
+  mean()
 
-G.track <- array(dim = c(dim(G), its))
+alphadenom <- lapply(1:length(alpha.hat), function(i){
+  (alphabar - t(alpha.hat[[i]])) ^2
+}) %>%
+  unlist %>%
+  sum
 
-k <- 1
-q <- 2
-qtil <- which((1:Q) != q)
-
-
-
-i <- 1
-
-ybig <- do.call("cbind", y)
-alpha.track <- list()
-
-for(i in 1:its){
-  
-  ### G transofrmed Alphas
-  alpha.star <- alpha.track[[i]] <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = V, W = W, m0 = 0, C0 = diag(10, Q, Q))$x)
-
-
-  ### Posterior of G
-  abig <- do.call("cbind", alpha.star)
-
-
-  aybig <- tcrossprod(ybig, abig)
-
-  ata.inv <-  solve(tcrossprod(abig)/sigeps2 + diag(1/var_qs, Q, Q))
-  mu.g <- (mu_qs/var_qs + aybig/sigeps2) %*% ata.inv
-
-
-  G.track[,,i] <- G.star <- abs((lapply(1:K, function(k){
-    mvtnorm::rmvnorm(1, mean = mu.g[k,], sigma = ata.inv)
-  }) %>%
-    do.call("rbind", .)) * GLoadings)
-  
-
-
-  ### Variances
-  if(i > 500){
-    fp <- lapply(1:N, function(i){
-      apply(alpha.star[[i]], 1, function(z)diff(z))
-      
-    }) %>%
-      do.call("rbind", .) %>%
-      crossprod()
-    
-    
-    W <- cov2cor(cIRT::riwishart(Neta, fp))
-    
-    wcovWish[,,i] <- W
-  }
-  
-  # 
-  # 
-  # W <- diag(sapply(diag(fp), function(x){
-  #   1/rgamma(1, (Neta/ 2 + a0), (b0 + x/ 2))
-  # }))
-  # 
-  # wcovWish[,,i] <- W
-  
-  
-  ###### Sigma eps
-
-  or <- lapply(1:N, function(i){
-    (y[[i]] - G.star %*% alpha.star[[i]])^2
-  })  %>%
-    do.call("cbind", .) %>%
-    apply(1, function(x)sum((x)))
-
-
-  sigma2.eps.star <- sapply(or, function(x)1/rgamma(1, ((N*TT)/2 +c0), d0+x/2))
-  V <- vcovWish[,,i] <-sigma2.eps.star * diag(K)
-
-  if((i %% 10) == 0)replaceMessage(i)
-    
-}
-
+1 - (alphanum/alphadenom)
 
 
 ```
 
 
 
-```{r}
-apply(wcovWish, 1:2,mean, na.rm = TRUE) %>%
-  cov2cor()
-apply(wcovWish, 1:2,quantile, .025, na.rm = TRUE) %>%
-  cov2cor()
-```
-
-
-
-
 
 ```{r}
+G.track <- facout$G
 covered <- matrix(0, K, Q)
 for(kp in 1:K){
   for(qp in 1:Q){
-    ci <- quantile(G.track[kp,qp,], c(0.025, 0.975), na.rm = T)
-    covered[kp, qp] <- ci[1] < G[kp,qp] & ci[2] > G[kp,qp]
-    plot(
-      G.track[kp,qp,],
-      main = paste(
-        kp, ", ", qp, "    ",
-        round(G[kp,qp], 3),
-        ": (",
-        paste( round(ci, 3), collapse = ", "),
-        ")",
-        sep = ""
+    if(G[kp, qp] != 0){
+      ci <- quantile(G.track[kp,qp,burn:its], c(0.025, 0.975), na.rm = T)
+      maxp <- max(c(G.track[kp,qp,], ci[2]))
+      covered[kp, qp] <- ci[1] < G[kp,qp] & ci[2] > G[kp,qp]
+      plot(
+        G.track[kp,qp,],
+        main = paste(
+          kp, ", ", qp, "    ",
+          round(G[kp,qp], 3),
+          ": (",
+          paste( round(ci, 3), collapse = ", "),
+          ")",
+          sep = ""
+        ),
+        ylim = c(0, 20)
       )
-    )
-    abline(h = G[kp,qp], col = 'red')
+      abline(h = G[kp,qp], col = 'red')
+      abline(h = ci[1], lty = 2, col = 'green')
+      abline(h = ci[2], lty = 2, col = 'green')
+    }
   }
+  
 }
 
 
 hist(apply(G.track, 1:2, mean) - G)
 
 ```
+
+
 
 
 
