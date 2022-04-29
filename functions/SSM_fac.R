@@ -18,7 +18,7 @@ SSM_fac <- function(
   alpha.star <- list()
   #Create list to hold each y and time
   uid <- unique(data[[id_var]])
-  nid <- length(uid)
+  nid <- N <- length(uid)
   Neta <- nrow(data) - nid
   for(i in 1:nid){
     tfid <- data[id_var] == uid[i]
@@ -63,7 +63,14 @@ SSM_fac <- function(
   for(i in 1:its){
     
     ### G transofrmed Alphas
-    alpha.star <- alpha.track[[i]] <- lapply(y, function(yout)ffbs.joint(y = yout, G = G.star, V = V, W = W, m0 = 0, C0 = diag(10, Q, Q))$x)
+    alpha.star <- alpha.track[[i]] <- lapply(1:nid, function(yi){
+      ffbs.joint(
+        y = y[[yi]], G = G.star, 
+        V = V, W = W, 
+        m0 = 0, C0 = diag(10, Q, Q), 
+        timeDiff = time_diff[[yi]]
+      )$x
+    })
     
     
     ### Posterior of G
@@ -86,7 +93,7 @@ SSM_fac <- function(
     ### Variances
     if(i > wait){
       fp <- lapply(1:N, function(i){
-        apply(alpha.star[[i]], 1, function(z)diff(z))
+        apply(alpha.star[[i]], 1, function(z)diff(z)) / sqrt( time_diff[[i]] )
         
       }) %>%
         do.call("rbind", .) %>%
