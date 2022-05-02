@@ -25,7 +25,7 @@ its <- 10000
 burn <- floor(its/2)
 wait <- floor(its/4)
 N <- 10
-TT <-20
+TT <-10
 Q <- 4
 K <- 10
 
@@ -74,13 +74,13 @@ colnames(y) <- paste("y_", 1:ncol(y), sep = "")
 
 FULL <- cbind(y, FULL)
 
-FULL <- FULL %>%
-  group_by(ID) %>%
-  mutate(
-    KEEP = c(T, sample(c(rep(T, (TT/2) - 1), rep(F, (TT/2)))))
-  ) %>%
-  filter(KEEP) %>%
-  ungroup()
+# FULL <- FULL %>%
+#   group_by(ID) %>%
+#   mutate(
+#     KEEP = c(T, sample(c(rep(T, (TT/2) - 1), rep(F, (TT/2)))))
+#   ) %>%
+#   filter(KEEP) %>%
+#   ungroup()
 ```
 
 ### Run model
@@ -94,7 +94,7 @@ data = FULL
 
 facout <- SSM_fac(
   data = FULL, outcome_vars = paste("y_", 1:10, sep = ""), id_var = "ID", time_var = "TIME", G_form = GLoadings,
-  its = its
+  its = its, var_G = 20
 )
 
 

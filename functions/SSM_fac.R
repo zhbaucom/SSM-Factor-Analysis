@@ -19,6 +19,7 @@ SSM_fac <- function(
   #Create list to hold each y and time
   uid <- unique(data[[id_var]])
   nid <- N <- length(uid)
+  Ntotal <- nrow(data)
   Neta <- nrow(data) - nid
   for(i in 1:nid){
     tfid <- data[id_var] == uid[i]
@@ -40,10 +41,10 @@ SSM_fac <- function(
   wcovWish <- array(NA, dim = c(Q, Q, its))
   
   ###Priors for ETA
-  prior.nu.eta <- K - 1 + 0.01
-  ## prior.nu.eta <- cs + 1
-  prior.Gamma.eta <- diag(0.01, K)
-  ## prior.Gamma.eta <- diag(1, cs)
+  # prior.nu.eta <- K - 1 + 0.01
+  prior.nu.eta <- K + 1
+  # prior.Gamma.eta <- diag(0.01, K)
+  prior.Gamma.eta <- diag(1, K)
   
   
 
@@ -100,7 +101,7 @@ SSM_fac <- function(
         crossprod()
       
       
-      W <- cov2cor(cIRT::riwishart(Neta, fp))
+      W <- cov2cor(cIRT::riwishart(Neta-1, fp))
       
       wcovWish[,,i] <- W
     }
@@ -116,7 +117,7 @@ SSM_fac <- function(
       apply(1, function(x)sum((x)))
     
     
-    sigma2.eps.star <- sapply(or, function(x)1/rgamma(1, ((N*TT)/2 +c0), d0+x/2))
+    sigma2.eps.star <- sapply(or, function(x)1/rgamma(1, (((Ntotal) - 1)/2), x/2))
     vcovWish[i,] <- sigma2.eps.star
     V <- sigma2.eps.star * diag(K)
     
