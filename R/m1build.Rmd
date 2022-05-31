@@ -21,11 +21,17 @@ replaceMessage <- function(x, width = 80)
 ### Data creation
 
 ```{r}
+sigeta2 <- (randcorr(Q)/2) %>%
+  abs()
+```
+
+
+```{r}
 its <- 10000
 burn <- floor(its/2)
 wait <- floor(its/4)
 N <- 10
-TT <-10
+TT <-20
 Q <- 4
 K <- 10
 
@@ -48,8 +54,7 @@ G <- c(
   matrix(K, Q) * GLoadings
 
 sigeps2 <- 1
-sigeta2 <- (randcorr(Q)/2) %>%
-  abs()
+
 diag(sigeta2) <- 1
 gvec <- seq(0, 1, length.out = K)
 
@@ -74,13 +79,49 @@ colnames(y) <- paste("y_", 1:ncol(y), sep = "")
 
 FULL <- cbind(y, FULL)
 
-# FULL <- FULL %>%
-#   group_by(ID) %>%
-#   mutate(
-#     KEEP = c(T, sample(c(rep(T, (TT/2) - 1), rep(F, (TT/2)))))
-#   ) %>%
-#   filter(KEEP) %>%
-#   ungroup()
+FULL <- FULL %>%
+  group_by(ID) %>%
+  mutate(
+    KEEP = c(T, sample(c(rep(T, (TT/2) - 1), rep(F, (TT/2)))))
+  ) %>%
+  filter(KEEP) %>%
+  ungroup()
+
+FULL %>%
+  group_by(ID) %>%
+  select(ID, TIME, starts_with("alpha")) %>%
+  mutate_at(vars(starts_with("alpha")), .funs = list(function(x)c(NA, diff(x)))) %>%
+  # mutate(
+  #   timeDiff = c(NA, diff(TIME)),
+  #   alpha_eta_1 = alpha_eta_1/sqrt(timeDiff),
+  #   alpha_eta_2 = alpha_eta_2/sqrt(timeDiff),
+  #   alpha_eta_3 = alpha_eta_3/sqrt(timeDiff),
+  #   alpha_eta_4 = alpha_eta_4/sqrt(timeDiff)
+  # ) %>%
+  na.omit() %>%
+  ungroup(ID) %>%
+  select(starts_with("alpha")) %>%
+  as.matrix() %>%
+  cor()
+
+FULL %>%
+  group_by(ID) %>%
+  select(ID, TIME, starts_with("alpha")) %>%
+  mutate_at(vars(starts_with("alpha")), .funs = list(function(x)c(NA, diff(x)))) %>%
+  mutate(
+    timeDiff = c(NA, diff(TIME)),
+    alpha_eta_1 = alpha_eta_1/sqrt(timeDiff),
+    alpha_eta_2 = alpha_eta_2/sqrt(timeDiff),
+    alpha_eta_3 = alpha_eta_3/sqrt(timeDiff),
+    alpha_eta_4 = alpha_eta_4/sqrt(timeDiff)
+  ) %>%
+  na.omit() %>%
+  ungroup(ID) %>%
+  select(starts_with("alpha")) %>%
+  as.matrix() %>%
+  cor()
+
+sigeta2
 ```
 
 ### Run model
